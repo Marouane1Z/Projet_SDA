@@ -8,9 +8,20 @@ Usage :
 """
 
 import argparse
+import os
+import numpy as np
+
 from data.generate_synthetic import generate_grid_graph
 from graph.loader import load_graph, save_graph
 from algorithms.dijkstra import dijkstra, reconstruct_path
+from algorithms.astar import astar
+from algorithms.alt import alt
+from algorithms.ch import preprocess_ch, query_ch
+from landmarks.selection import select_landmarks_random
+from landmarks.precompute import precompute_landmark_distances
+from benchmark.runner import run_benchmark
+from benchmark.metrics import compute_stats
+from benchmark.plots import plot_times, plot_distances
 
 
 def main():
@@ -22,39 +33,56 @@ def main():
         print("Génération du graphe synthétique...")
         g = generate_grid_graph(10, 10)
         print(g)
+
         dist, prev = dijkstra(g, source=0, target=99)
         print(f"Distance 0 -> 99 : {dist[99]:.2f} m")
         path = reconstruct_path(prev, 0, 99)
         print(f"Chemin : {path}")
 
-    elif args.mode == "osm":
-        from data.extract_osm import extract_osm
-        extract_osm("Paris, France", "data/graph_paris.pkl")
-
-    elif args.mode == "benchmark":
-        import numpy as np
-        from graph.loader import load_graph
-        from algorithms.dijkstra import dijkstra
-        from algorithms.astar import astar
-        from algorithms.alt import alt
-        from landmarks.selection import select_landmarks_random
-        from landmarks.precompute import precompute_landmark_distances
-        from benchmark.runner import run_benchmark
-        from benchmark.metrics import compute_stats
-        from benchmark.plots import plot_times, plot_distances
-
-        print("Chargement du graphe Paris...")
-        g = load_graph("data/graph_paris.pkl")
-        print(g)
-
-        # Génération de 50 requêtes aléatoires reproductibles
         rng = np.random.default_rng(42)
         queries = [
             (int(rng.integers(0, g.n_nodes)), int(rng.integers(0, g.n_nodes)))
             for _ in range(50)
         ]
 
-        # Précalcul des landmarks pour ALT (16 landmarks)
+        landmarks = select_landmarks_random(g, k=4)
+        def dijkstra_dist(graph, src):
+            d, _ = dijkstra(graph, src)
+            return d
+        landmark_dists = precompute_landmark_distances(g, landmarks, dijkstra_dist)
+        ch_data, ch_node_rank = preprocess_ch(g)
+
+        algorithms = {
+            "Dijkstra": lambda g, s, t, **kw: dijkstra(g, s, t),
+            "A*":       lambda g, s, t, **kw: astar(g, s, t),
+            "ALT":      lambda g, s, t, **kw: alt(g, s, t, landmark_dists),
+            "CH":       lambda g, s, t, **kw: query_ch(ch_data, ch_node_rank, s, t),
+        }
+
+        print("Lancement du benchmark (50 requetes x 4 algorithmes)...")
+        df = run_benchmark(g, queries, algorithms)
+        print(compute_stats(df).to_string(index=False))
+        os.makedirs("results", exist_ok=True)
+        df.to_csv("results/benchmark_synthetic.csv", index=False)
+        plot_times(df, output_dir="results/figures")
+        plot_distances(df, output_dir="results/figures")
+        print("Résultats sauvegardés dans results/")
+
+    elif args.mode == "osm":
+        from data.extract_osm import extract_osm
+        extract_osm("Paris, France", "data/graph_paris.pkl")
+
+    elif args.mode == "benchmark":
+        print("Chargement du graphe Paris...")
+        g = load_graph("data/graph_paris.pkl")
+        print(g)
+
+        rng = np.random.default_rng(42)
+        queries = [
+            (int(rng.integers(0, g.n_nodes)), int(rng.integers(0, g.n_nodes)))
+            for _ in range(50)
+        ]
+
         print("Précalcul des landmarks (ALT)...")
         landmarks = select_landmarks_random(g, k=16)
         def dijkstra_dist(graph, src):
@@ -62,22 +90,23 @@ def main():
             return d
         landmark_dists = precompute_landmark_distances(g, landmarks, dijkstra_dist)
 
-        # Algorithmes à comparer
+        print("Prétraitement CH (contraction hiérarchique)...")
+        ch_data, ch_node_rank = preprocess_ch(g)
+
         algorithms = {
             "Dijkstra": lambda g, s, t, **kw: dijkstra(g, s, t),
             "A*":       lambda g, s, t, **kw: astar(g, s, t),
             "ALT":      lambda g, s, t, **kw: alt(g, s, t, landmark_dists),
+            "CH":       lambda g, s, t, **kw: query_ch(ch_data, ch_node_rank, s, t),
         }
 
-        print("Lancement du benchmark (50 requetes x 3 algorithmes)...")
+        print("Lancement du benchmark (50 requetes x 4 algorithmes)...")
         df = run_benchmark(g, queries, algorithms)
 
-        # Affichage des stats
         print()
         print("=== Resultats ===")
         print(compute_stats(df).to_string(index=False))
 
-        # Vérification cohérence des distances
         print()
         print("=== Verification coherence distances ===")
         pivot = df.pivot(index="query", columns="algorithm", values="distance")
@@ -86,11 +115,12 @@ def main():
         if not ok:
             print(pivot[pivot.nunique(axis=1) > 1].head())
 
-        # Graphiques
+        os.makedirs("results", exist_ok=True)
+        df.to_csv("results/benchmark_osm.csv", index=False)
         plot_times(df)
         plot_distances(df)
         print()
-        print("Figures sauvegardees dans results/figures/")
+        print("Résultats sauvegardés dans results/")
 
 
 if __name__ == "__main__":
