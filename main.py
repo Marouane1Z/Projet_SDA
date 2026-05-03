@@ -9,9 +9,8 @@ Usage :
 
 import argparse
 import os
+import pickle
 import numpy as np
-
-from data.generate_synthetic import generate_grid_graph
 from graph.loader import load_graph, save_graph
 from algorithms.dijkstra import dijkstra, reconstruct_path
 from algorithms.astar import astar
@@ -83,15 +82,35 @@ def main():
             for _ in range(50)
         ]
 
-        print("Précalcul des landmarks (ALT)...")
-        landmarks = select_landmarks_random(g, k=16)
-        def dijkstra_dist(graph, src):
-            d, _ = dijkstra(graph, src)
-            return d
-        landmark_dists = precompute_landmark_distances(g, landmarks, dijkstra_dist)
+        CACHE_LM   = "data/landmark_dists.npy"
+        CACHE_LM_I = "data/landmark_indices.npy"
+        CACHE_CH   = "data/ch_cache.pkl"
 
-        print("Prétraitement CH (contraction hiérarchique)...")
-        ch_data, ch_node_rank = preprocess_ch(g)
+        if os.path.exists(CACHE_LM) and os.path.exists(CACHE_LM_I):
+            print("Chargement landmarks depuis cache...")
+            landmark_dists = np.load(CACHE_LM)
+            landmarks = np.load(CACHE_LM_I).tolist()
+        else:
+            print("Précalcul des landmarks (ALT)...")
+            landmarks = select_landmarks_random(g, k=16)
+            def dijkstra_dist(graph, src):
+                d, _ = dijkstra(graph, src)
+                return d
+            landmark_dists = precompute_landmark_distances(g, landmarks, dijkstra_dist)
+            np.save(CACHE_LM, landmark_dists)
+            np.save(CACHE_LM_I, np.array(landmarks, dtype=np.int32))
+            print("Landmarks sauvegardés.")
+
+        if os.path.exists(CACHE_CH):
+            print("Chargement CH depuis cache...")
+            with open(CACHE_CH, "rb") as f:
+                ch_data, ch_node_rank = pickle.load(f)
+        else:
+            print("Prétraitement CH (contraction hiérarchique)...")
+            ch_data, ch_node_rank = preprocess_ch(g)
+            with open(CACHE_CH, "wb") as f:
+                pickle.dump((ch_data, ch_node_rank), f)
+            print("CH sauvegardé.")
 
         algorithms = {
             "Dijkstra": lambda g, s, t, **kw: dijkstra(g, s, t),
@@ -117,8 +136,8 @@ def main():
 
         os.makedirs("results", exist_ok=True)
         df.to_csv("results/benchmark_osm.csv", index=False)
-        plot_times(df)
-        plot_distances(df)
+        plot_times(df, prefix="osm")
+        plot_distances(df, prefix="osm")
         print()
         print("Résultats sauvegardés dans results/")
 

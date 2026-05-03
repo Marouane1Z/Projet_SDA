@@ -23,10 +23,10 @@ class CSRGraph:
         self.n_edges = len(self.indices)
 
     def get_neighbors(self, node):
-        """Retourne les voisins et poids d'un noeud sous forme de liste de (voisin, poids)."""
-        start = self.indptr[node]
-        end = self.indptr[node + 1]
-        return list(zip(self.indices[start:end], self.weights[start:end]))
+        """Retourne les voisins et poids d'un noeud sous forme d'itérateur de (voisin, poids)."""
+        start = int(self.indptr[node])
+        end = int(self.indptr[node + 1])
+        return zip(self.indices[start:end], self.weights[start:end])
 
     def get_coords(self, node):
         """Retourne (lat, lon) du noeud, ou None si pas de coordonnées."""

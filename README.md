@@ -4,8 +4,8 @@ Moteur de calcul d'itinéraires comparant plusieurs algorithmes de plus court ch
 
 ## Groupe
 - **Rayane** — Données & Graphe (`data/`, `graph/`, `landmarks/`)
-- **Merouane** — Algorithmes (`algorithms/`) + tests
-- **Saad** — Benchmark (`benchmark/`) + Contraction Hierarchies + rapport
+- **Marouane** — Algorithmes (`algorithms/`) + tests
+- **Saad** — Benchmark (`benchmark/`) + Contraction Hierarchies 
 
 ## Structure
 ```

@@ -1,6 +1,8 @@
 import heapq
 import numpy as np
 
+_INF = float('inf')
+
 
 def _witness_search(fwd_adj, source, max_dist, exclude, hop_limit=5):
     """Dijkstra limité depuis source, excluant le noeud contracté."""
@@ -8,13 +10,13 @@ def _witness_search(fwd_adj, source, max_dist, exclude, hop_limit=5):
     heap = [(0.0, 0, source)]
     while heap:
         d, hops, u = heapq.heappop(heap)
-        if d > dist.get(u, np.inf) or hops >= hop_limit or d > max_dist:
+        if hops >= hop_limit or d > max_dist or d > dist.get(u, _INF):
             continue
         for v, w in fwd_adj[u]:
             if v == exclude:
                 continue
             nd = d + w
-            if nd < dist.get(v, np.inf):
+            if nd < dist.get(v, _INF):
                 dist[v] = nd
                 heapq.heappush(heap, (nd, hops + 1, v))
     return dist
@@ -31,7 +33,7 @@ def _edge_difference(fwd_adj, bwd_adj, v, contracted):
     for u, w_uv in in_nbrs:
         witness = _witness_search(fwd_adj, u, w_uv + max_out_w, v)
         for nb, w_vw in out_nbrs:
-            if u != nb and witness.get(nb, np.inf) > w_uv + w_vw:
+            if u != nb and witness.get(nb, _INF) > w_uv + w_vw:
                 shortcuts += 1
     return shortcuts - (len(in_nbrs) + len(out_nbrs))
 
@@ -47,7 +49,7 @@ def preprocess_ch(graph):
     """
     n = graph.n_nodes
 
-    fwd_adj = [list(graph.get_neighbors(u)) for u in range(n)]
+    fwd_adj = [[(int(v), float(w)) for v, w in graph.get_neighbors(u)] for u in range(n)]
     bwd_adj = [[] for _ in range(n)]
     for u in range(n):
         for v, w in fwd_adj[u]:
@@ -56,10 +58,12 @@ def preprocess_ch(graph):
     contracted = [False] * n
     node_rank = np.zeros(n, dtype=np.int32)
 
-    print("CH : calcul des importances initiales...")
+    # Initialisation rapide : degré comme estimation basse, lazy update corrige à la contraction
+    print("CH : initialisation du heap...")
     heap = []
     for v in range(n):
-        heapq.heappush(heap, (_edge_difference(fwd_adj, bwd_adj, v, contracted), v))
+        deg = len(fwd_adj[v]) + len(bwd_adj[v])
+        heapq.heappush(heap, (deg, v))
 
     rank = 0
     print("CH : contraction des noeuds...")
@@ -107,7 +111,7 @@ def preprocess_ch(graph):
         node_rank[v] = rank
         rank += 1
 
-        if rank % 10000 == 0:
+        if rank % 1000 == 0:
             print(f"  {rank}/{n} noeuds contractés...")
 
     # Graphes montants pour la requête bidirectionnelle
@@ -160,7 +164,7 @@ def query_ch(ch_data, node_rank, source, target):
         d_top_fwd = heap_fwd[0][0] if heap_fwd else np.inf
         d_top_bwd = heap_bwd[0][0] if heap_bwd else np.inf
 
-        if d_top_fwd + d_top_bwd >= mu:
+        if min(d_top_fwd, d_top_bwd) >= mu:
             break
 
         if d_top_fwd <= d_top_bwd:
