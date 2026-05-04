@@ -21,7 +21,7 @@ from landmarks.precompute import precompute_landmark_distances
 from benchmark.runner import run_benchmark
 from benchmark.metrics import compute_stats
 from benchmark.plots import plot_times, plot_distances
-
+from data.generate_synthetic import generate_grid_graph
 
 def main():
     parser = argparse.ArgumentParser(description="Route Planning — SDA M1")
